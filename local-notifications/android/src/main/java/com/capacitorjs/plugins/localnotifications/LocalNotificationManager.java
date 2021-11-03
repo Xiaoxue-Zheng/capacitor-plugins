@@ -31,6 +31,8 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import static com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher.CRON_KEY;
+
 /**
  * Contains implementations for all notification actions
  */
@@ -162,6 +164,22 @@ public class LocalNotificationManager {
     // TODO media style notification support NotificationCompat.MediaStyle
     // TODO custom small/large icons
     private void buildNotification(NotificationManagerCompat notificationManager, LocalNotification localNotification, PluginCall call) {
+        NotificationCompat.Builder mBuilder = getNotificationBuilder(localNotification);
+        createActionIntents(localNotification, mBuilder);
+        // notificationId is a unique int for each localNotification that you must define
+        Notification buildNotification = mBuilder.build();
+        if (localNotification.isScheduled()) {
+            triggerScheduledNotification(buildNotification, localNotification);
+        } else {
+            try {
+                JSObject notificationJson = new JSObject(localNotification.getSource());
+                LocalNotificationsPlugin.fireReceived(notificationJson);
+            } catch (JSONException e) {}
+            notificationManager.notify(localNotification.getId(), buildNotification);
+        }
+    }
+
+    private NotificationCompat.Builder getNotificationBuilder(LocalNotification localNotification) {
         String channelId = DEFAULT_NOTIFICATION_CHANNEL_ID;
         if (localNotification.getChannelId() != null) {
             channelId = localNotification.getChannelId();
@@ -173,7 +191,6 @@ public class LocalNotificationManager {
             .setOngoing(localNotification.isOngoing())
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setGroupSummary(localNotification.isGroupSummary());
-
         if (localNotification.getLargeBody() != null) {
             // support multiline text
             mBuilder.setStyle(
@@ -192,7 +209,6 @@ public class LocalNotificationManager {
             inboxStyle.setSummaryText(localNotification.getSummaryText());
             mBuilder.setStyle(inboxStyle);
         }
-
         String sound = localNotification.getSound(context, getDefaultSound(context));
         if (sound != null) {
             Uri soundUri = Uri.parse(sound);
@@ -225,28 +241,9 @@ public class LocalNotificationManager {
 
         String iconColor = localNotification.getIconColor(config.getString(CONFIG_KEY_PREFIX + "iconColor"));
         if (iconColor != null) {
-            try {
-                mBuilder.setColor(Color.parseColor(iconColor));
-            } catch (IllegalArgumentException ex) {
-                if (call != null) {
-                    call.reject("Invalid color provided. Must be a hex string (ex: #ff0000");
-                }
-                return;
-            }
+            mBuilder.setColor(Color.parseColor(iconColor));
         }
-
-        createActionIntents(localNotification, mBuilder);
-        // notificationId is a unique int for each localNotification that you must define
-        Notification buildNotification = mBuilder.build();
-        if (localNotification.isScheduled()) {
-            triggerScheduledNotification(buildNotification, localNotification);
-        } else {
-            try {
-                JSObject notificationJson = new JSObject(localNotification.getSource());
-                LocalNotificationsPlugin.fireReceived(notificationJson);
-            } catch (JSONException e) {}
-            notificationManager.notify(localNotification.getId(), buildNotification);
-        }
+        return mBuilder;
     }
 
     // Create intents for open/dissmis actions
@@ -372,7 +369,7 @@ public class LocalNotificationManager {
         DateMatch on = schedule.getOn();
         if (on != null) {
             long trigger = on.nextTrigger(new Date());
-            notificationIntent.putExtra(TimedNotificationPublisher.CRON_KEY, on.toMatchString());
+            notificationIntent.putExtra(CRON_KEY, on.toMatchString());
             pendingIntent = PendingIntent.getBroadcast(context, request.getId(), notificationIntent, PendingIntent.FLAG_CANCEL_CURRENT);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && schedule.allowWhileIdle()) {
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC, trigger, pendingIntent);
@@ -385,13 +382,33 @@ public class LocalNotificationManager {
         }
     }
 
-    public void cancel(PluginCall call) {
+    public void cancel(PluginCall call, boolean all) {
         List<Integer> notificationsToCancel = LocalNotification.getLocalNotificationPendingList(call);
         if (notificationsToCancel != null) {
             for (Integer id : notificationsToCancel) {
                 dismissVisibleNotification(id);
                 cancelTimerForNotification(id);
-                storage.deleteNotification(Integer.toString(id));
+
+                if( all ){
+                    storage.deleteNotification(Integer.toString(id));
+                }else {
+                    LocalNotification savedNotification = storage.getSavedNotification(Integer.toString(id));
+                    DateMatch on = savedNotification.getSchedule().getOn();
+                    if (on != null) {
+                        //when the schedule type is on and only cancel next time notification, reschedule next time notification
+                        NotificationCompat.Builder mBuilder = getNotificationBuilder(savedNotification);
+                        createActionIntents(savedNotification, mBuilder);
+                        Notification notification = mBuilder.build();
+                        Intent notificationIntent = new Intent(context, TimedNotificationPublisher.class);
+                        notificationIntent.putExtra(CRON_KEY, on.toMatchString());
+                        notificationIntent.putExtra(NOTIFICATION_INTENT_KEY, id);
+                        notificationIntent.putExtra(TimedNotificationPublisher.NOTIFICATION_KEY, notification);
+                        DateMatch date = DateMatch.fromMatchString(on.toMatchString());
+                        TimedNotificationPublisher.rescheduleNotificationIfNeeded(context, notificationIntent, id, new Date(date.nextTrigger(new Date())));
+                    }else{
+                        storage.deleteNotification(Integer.toString(id));
+                    }
+                }
             }
         }
         call.resolve();

@@ -79,6 +79,13 @@ export interface LocalNotificationsPlugin {
    */
   cancel(options: CancelOptions): Promise<void>;
 
+    /**
+   * Cancel next time notification when the schedule type is "on".
+   *
+   * @since 1.0.0
+   */
+     cancelNextTime(options: CancelOptions): Promise<void>;
+
   /**
    * Check if notifications are enabled or not.
    *

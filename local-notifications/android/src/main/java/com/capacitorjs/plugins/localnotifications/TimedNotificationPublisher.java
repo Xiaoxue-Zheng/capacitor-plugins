@@ -36,17 +36,17 @@ public class TimedNotificationPublisher extends BroadcastReceiver {
         JSObject notificationJson = storage.getSavedNotificationAsJSObject(Integer.toString(id));
         LocalNotificationsPlugin.fireReceived(notificationJson);
         notificationManager.notify(id, notification);
-        if (!rescheduleNotificationIfNeeded(context, intent, id)) {
+        if (!rescheduleNotificationIfNeeded(context, intent, id, new Date())) {
             storage.deleteNotification(Integer.toString(id));
         }
     }
 
-    private boolean rescheduleNotificationIfNeeded(Context context, Intent intent, int id) {
+    public static boolean rescheduleNotificationIfNeeded(Context context, Intent intent, int id, Date from) {
         String dateString = intent.getStringExtra(CRON_KEY);
         if (dateString != null) {
             DateMatch date = DateMatch.fromMatchString(dateString);
             AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-            long trigger = date.nextTrigger(new Date());
+            long trigger = date.nextTrigger(from);
             Intent clone = (Intent) intent.clone();
             PendingIntent pendingIntent = PendingIntent.getBroadcast(context, id, clone, PendingIntent.FLAG_CANCEL_CURRENT);
             alarmManager.setExact(AlarmManager.RTC, trigger, pendingIntent);
@@ -54,7 +54,6 @@ public class TimedNotificationPublisher extends BroadcastReceiver {
             Logger.debug(Logger.tags("LN"), "notification " + id + " will next fire at " + sdf.format(new Date(trigger)));
             return true;
         }
-
         return false;
     }
 }

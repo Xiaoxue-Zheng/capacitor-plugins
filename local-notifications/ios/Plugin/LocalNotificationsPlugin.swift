@@ -151,6 +151,61 @@ public class LocalNotificationsPlugin: CAPPlugin {
         call.resolve()
     }
 
+    fileprivate func rescheduleOnTypeNotification(_ ids: [String], _ call: CAPPluginCall) {
+        for identifier in ids {
+            var trigger: UNNotificationTrigger?
+            let oldNotification = self.notificationDelegationHandler.notificationRequestLookup[identifier]
+            var content: UNNotificationContent
+            do {
+                content = try makeNotificationContent(oldNotification!)
+            } catch {
+                CAPLog.print(error.localizedDescription)
+                call.reject("Unable to make notification", nil, error)
+                return
+            }
+            if let schedule = oldNotification!["schedule"] as? JSObject {
+                let on = schedule["on"] as? JSObject
+                if let on = on {
+                    let dateComponents = getNextDateComponents(on)
+                    trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+                    let request = UNNotificationRequest(identifier: "\(identifier)", content: content, trigger: trigger)
+                    
+                    let center = UNUserNotificationCenter.current()
+                    center.add(request) { (error: Error?) in
+                        if let theError = error {
+                            CAPLog.print(theError.localizedDescription)
+                            call.reject(theError.localizedDescription)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Cancel notifications by id
+     */
+    @objc func cancelNextTime(_ call: CAPPluginCall) {
+        guard let notifications = call.getArray("notifications", JSObject.self), notifications.count > 0 else {
+            call.reject("Must supply notifications to cancel")
+            return
+        }
+
+        let ids = notifications.map({ (value: JSObject) -> String in
+            if let idString = value["id"] as? String {
+                return idString
+            } else if let idNum = value["id"] as? NSNumber {
+                return idNum.stringValue
+            }
+            return ""
+        })
+
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+        
+        rescheduleOnTypeNotification(ids, call)
+        call.resolve()
+    }
+
     /**
      * Get all pending notifications.
      */
@@ -316,6 +371,63 @@ public class LocalNotificationsPlugin: CAPPlugin {
             dateInfo.minute = minute
         }
         if let second = at["second"] as? Int {
+            dateInfo.second = second
+        }
+        return dateInfo
+    }
+    
+    /**
+     * Given our schedule format, return the next DateComponents object from now
+     * that only contains the components passed in.
+     */
+    func getNextDateComponents(_ on: JSObject) -> DateComponents {
+        // dateInfo.calendar = Calendar.current
+        var nextDate : Date?
+        var components: Set<Calendar.Component> = Set.init()
+        let curDate = Date()
+        if on["year"] != nil {
+            nextDate = Calendar.current.date(byAdding: .year, value: 1, to: curDate)
+            components.insert(.year)
+        }
+        if on["month"] != nil {
+            nextDate = Calendar.current.date(byAdding: .month, value: 1, to: curDate)
+            components.insert(.year)
+        }
+        if (on["day"] != nil) {
+            nextDate = Calendar.current.date(byAdding: .day, value: 1, to: curDate)
+            components.insert(.month)
+        }
+        if (on["hour"] != nil) {
+            nextDate = Calendar.current.date(byAdding: .hour, value: 1, to: curDate)
+            components.insert(.day)
+        }
+        if on["minute"] != nil {
+            nextDate = Calendar.current.date(byAdding: .minute, value: 1, to: curDate)
+            components.insert(.hour)
+        }
+        if on["second"] != nil {
+            nextDate = Calendar.current.date(byAdding: .second, value: 1, to: curDate)
+            components.insert(.minute)
+        }
+        
+        var dateInfo = Calendar.current.dateComponents(components, from: nextDate!)
+
+        if let year = on["year"] as? Int {
+            dateInfo.year = year
+        }
+        if let month = on["month"] as? Int {
+            dateInfo.month = month
+        }
+        if let day = on["day"] as? Int {
+            dateInfo.day = day
+        }
+        if let hour = on["hour"] as? Int {
+            dateInfo.hour = hour
+        }
+        if let minute = on["minute"] as? Int {
+            dateInfo.minute = minute
+        }
+        if let second = on["second"] as? Int {
             dateInfo.second = second
         }
         return dateInfo

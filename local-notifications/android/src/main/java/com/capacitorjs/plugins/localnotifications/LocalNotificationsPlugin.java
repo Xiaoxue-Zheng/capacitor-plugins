@@ -72,7 +72,12 @@ public class LocalNotificationsPlugin extends Plugin {
 
     @PluginMethod
     public void cancel(PluginCall call) {
-        manager.cancel(call);
+        manager.cancel(call, true);
+    }
+
+    @PluginMethod
+    public void cancelNextTime(PluginCall call) {
+        manager.cancel(call, false);
     }
 
     @PluginMethod

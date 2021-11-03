@@ -72,6 +72,7 @@ If the device has entered [Doze](https://developer.android.com/training/monitori
 * [`getPending()`](#getpending)
 * [`registerActionTypes(...)`](#registeractiontypes)
 * [`cancel(...)`](#cancel)
+* [`cancelNextTime(...)`](#cancelnexttime)
 * [`areEnabled()`](#areenabled)
 * [`createChannel(...)`](#createchannel)
 * [`deleteChannel(...)`](#deletechannel)
@@ -149,6 +150,23 @@ cancel(options: CancelOptions) => Promise<void>
 ```
 
 Cancel pending notifications.
+
+| Param         | Type                                                    |
+| ------------- | ------------------------------------------------------- |
+| **`options`** | <code><a href="#canceloptions">CancelOptions</a></code> |
+
+**Since:** 1.0.0
+
+--------------------
+
+
+### cancelNextTime(...)
+
+```typescript
+cancelNextTime(options: CancelOptions) => Promise<void>
+```
+
+Cancel next time notification when the schedule type is "on".
 
 | Param         | Type                                                    |
 | ------------- | ------------------------------------------------------- |

@@ -63,6 +63,10 @@ export class LocalNotificationsWeb
     );
   }
 
+  async cancelNextTime(pending: ScheduleResult): Promise<void> {
+    this.cancel(pending)
+  }
+
   async areEnabled(): Promise<EnabledResult> {
     const { display } = await this.checkPermissions();
 
